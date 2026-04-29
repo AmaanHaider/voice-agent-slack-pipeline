@@ -13,7 +13,7 @@ sequenceDiagram
 
   Note over B: Call status updates (scheduled → ... → completed)
   B->>V: POST /webhook?secret=...
-  V->>V: Validate secret (optional)
+  V->>V: Validate required secret
   V->>V: Only process when status === "completed"
   V->>V: Skip obvious test/empty transcript payloads
   V->>S: POST Slack message (id, agent_id, duration, transcript)
@@ -25,7 +25,7 @@ sequenceDiagram
 
 - **Receives** Bolna execution webhooks at `POST /webhook`
 - **Filters** all events except `status === "completed"`
-- **Protects** the webhook with an optional shared secret via URL param: `POST /webhook?secret=...`
+- **Protects** the webhook with a **required** shared secret via URL param: `POST /webhook?secret=...` (must match `WEBHOOK_SECRET` in env)
 - **Posts** a Slack message via **Slack Incoming Webhooks**
 - **Truncates** transcript to stay under Slack Block Kit limits (3,000 chars)
 
@@ -58,8 +58,8 @@ cp .env.example .env
 Fill in:
 
 - `SLACK_WEBHOOK_URL` (Slack Incoming Webhook URL)
+- `WEBHOOK_SECRET` (**required**; use a long URL-safe string, e.g. letters and numbers only)
 - `PORT` (optional, defaults to 3000)
-- `WEBHOOK_SECRET` (optional but recommended; URL-safe string like `abc123...`)
 
 3) Run locally
 
@@ -73,18 +73,25 @@ Health check:
 curl http://localhost:3000/health
 ```
 
+### Deployed service (this project)
+
+| | URL |
+|---|-----|
+| **App (root)** | `https://voice-agent-slack-pipeline.vercel.app/` |
+| **Health** | `https://voice-agent-slack-pipeline.vercel.app/health` |
+| **Webhook (Bolna)** | `https://voice-agent-slack-pipeline.vercel.app/webhook?secret=YOUR_WEBHOOK_SECRET` |
+
+Replace `YOUR_WEBHOOK_SECRET` with the same value as `WEBHOOK_SECRET` in Vercel (and in your local `.env`).
+
 ### Setup (Vercel)
 
 1) Connect this GitHub repo to Vercel
-2) In **Vercel Project → Settings → Environment Variables**, set:
+2) In **Vercel Project → Settings → Environment Variables**, set (both **required**):
    - `SLACK_WEBHOOK_URL`
-   - `WEBHOOK_SECRET` (recommended)
-3) Deploy
+   - `WEBHOOK_SECRET`
+3) Redeploy after changing env vars
 
-After deploy:
-
-- **Health**: `https://<your-vercel-domain>/health`
-- **Webhook**: `https://<your-vercel-domain>/webhook?secret=YOUR_SECRET`
+After deploy, use the URLs in **Deployed service** above (or your own Vercel domain if different).
 
 ### Setup (Bolna)
 
@@ -94,9 +101,9 @@ In Bolna:
 
 1) Open your **Agent**
 2) Go to **Analytics tab**
-3) Under **“Push all execution data to webhook”**, paste:
+3) Under **“Push all execution data to webhook”**, paste (use your real secret, not a placeholder):
 
-`https://<your-vercel-domain>/webhook?secret=YOUR_SECRET`
+`https://voice-agent-slack-pipeline.vercel.app/webhook?secret=YOUR_WEBHOOK_SECRET`
 
 4) Click **Save agent**
 
@@ -136,8 +143,10 @@ curl -X POST "http://localhost:3000/webhook?secret=YOUR_SECRET" \
   - Ensure `SLACK_WEBHOOK_URL` is set in the environment (Vercel env vars for production)
   - Ensure the webhook payload has `status: "completed"`
 - **401 unauthorized**:
-  - Missing/wrong `?secret=...` in the webhook URL while `WEBHOOK_SECRET` is set
-  - Use a URL-safe secret (letters/numbers) to avoid encoding issues
+  - Missing or wrong `?secret=...` in the request URL (must match `WEBHOOK_SECRET` exactly)
+  - Use a URL-safe secret (letters/numbers) so Bolna’s URL field doesn’t need encoding
+- **503 server_misconfigured**:
+  - `WEBHOOK_SECRET` is missing from the environment — set it locally and on Vercel, then redeploy
 - **413 Payload Too Large**:
   - Body exceeded `2mb` (`express.json({ limit: "2mb" })`)
 
