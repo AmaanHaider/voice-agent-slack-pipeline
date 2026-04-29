@@ -16,7 +16,11 @@ function truncateTranscript(transcript) {
 async function sendCallAlert({ id, agent_id, duration, transcript }) {
   const slackWebhookUrl = process.env.SLACK_WEBHOOK_URL;
   if (!slackWebhookUrl) {
-    throw new Error("Missing SLACK_WEBHOOK_URL in environment");
+    // In some environments (e.g. fresh deploy), the webhook may be invoked before env vars are set.
+    // Do not throw here; the webhook handler should stay 200 OK to avoid upstream retries.
+    // eslint-disable-next-line no-console
+    console.warn("SLACK_WEBHOOK_URL is not set; skipping Slack alert.");
+    return;
   }
 
   const durationText = duration !== null ? formatDuration(duration) : "N/A";
