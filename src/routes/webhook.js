@@ -1,10 +1,27 @@
 const express = require("express");
+const crypto = require("crypto");
 
 const slackService = require("../services/slack");
 
 const router = express.Router();
 
+function isValidSecret(provided, expected) {
+  if (!provided || !expected) return false;
+  const providedBuf = Buffer.from(String(provided));
+  const expectedBuf = Buffer.from(String(expected));
+  if (providedBuf.length !== expectedBuf.length) return false;
+  return crypto.timingSafeEqual(providedBuf, expectedBuf);
+}
+
 router.post("/", async (req, res) => {
+  const expectedSecret = process.env.WEBHOOK_SECRET;
+  if (expectedSecret) {
+    const providedSecret = req.query?.secret;
+    if (!isValidSecret(providedSecret, expectedSecret)) {
+      return res.status(401).json({ error: "unauthorized" });
+    }
+  }
+
   const payload = req.body || {};
 
   // eslint-disable-next-line no-console
