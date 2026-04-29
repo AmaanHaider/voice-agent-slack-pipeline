@@ -6,6 +6,10 @@ const app = express();
 // Bolna may send long transcripts; bump JSON limit above Express default.
 app.use(express.json({ limit: "2mb" }));
 
+app.get("/", (req, res) => {
+  res.status(200).send("OK. Try /health or POST /webhook");
+});
+
 app.get("/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
