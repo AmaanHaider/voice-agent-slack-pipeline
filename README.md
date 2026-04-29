@@ -2,6 +2,25 @@
 
 Send a Slack alert whenever a Bolna call execution ends with status `completed`, including **id**, **agent_id**, **duration**, and **transcript**.
 
+### Architecture / Flow
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant B as Bolna (Agent)
+  participant V as Vercel / Express API
+  participant S as Slack Incoming Webhook
+
+  Note over B: Call status updates (scheduled → ... → completed)
+  B->>V: POST /webhook?secret=...
+  V->>V: Validate secret (optional)
+  V->>V: Only process when status === "completed"
+  V->>V: Skip obvious test/empty transcript payloads
+  V->>S: POST Slack message (id, agent_id, duration, transcript)
+  S-->>V: 200 ok
+  V-->>B: 200 {received:true, processed:true/false}
+```
+
 ### What this does
 
 - **Receives** Bolna execution webhooks at `POST /webhook`
@@ -10,13 +29,19 @@ Send a Slack alert whenever a Bolna call execution ends with status `completed`,
 - **Posts** a Slack message via **Slack Incoming Webhooks**
 - **Truncates** transcript to stay under Slack Block Kit limits (3,000 chars)
 
+### Endpoints
+
+- **GET** `/` → quick “OK” page
+- **GET** `/health` → JSON health check
+- **POST** `/webhook` → Bolna execution updates
+
 ### Requirements
 
 - Node.js 18+
 - A Slack Incoming Webhook URL
 - A Bolna agent with webhook configured
 
-### Setup
+### Setup (Local)
 
 1) Install dependencies
 
@@ -34,7 +59,7 @@ Fill in:
 
 - `SLACK_WEBHOOK_URL` (Slack Incoming Webhook URL)
 - `PORT` (optional, defaults to 3000)
-- `WEBHOOK_SECRET` (optional but recommended; URL-safe string)
+- `WEBHOOK_SECRET` (optional but recommended; URL-safe string like `abc123...`)
 
 3) Run locally
 
@@ -47,6 +72,33 @@ Health check:
 ```bash
 curl http://localhost:3000/health
 ```
+
+### Setup (Vercel)
+
+1) Connect this GitHub repo to Vercel
+2) In **Vercel Project → Settings → Environment Variables**, set:
+   - `SLACK_WEBHOOK_URL`
+   - `WEBHOOK_SECRET` (recommended)
+3) Deploy
+
+After deploy:
+
+- **Health**: `https://<your-vercel-domain>/health`
+- **Webhook**: `https://<your-vercel-domain>/webhook?secret=YOUR_SECRET`
+
+### Setup (Bolna)
+
+Bolna docs: `https://www.bolna.ai/docs/polling-call-status-webhooks`
+
+In Bolna:
+
+1) Open your **Agent**
+2) Go to **Analytics tab**
+3) Under **“Push all execution data to webhook”**, paste:
+
+`https://<your-vercel-domain>/webhook?secret=YOUR_SECRET`
+
+4) Click **Save agent**
 
 ### Local webhook testing (without Bolna)
 
@@ -78,6 +130,17 @@ curl -X POST "http://localhost:3000/webhook?secret=YOUR_SECRET" \
 - Ignores obvious test payloads where `id` is not a UUID (e.g. `id="test"`)
 - Ignores completed payloads with an empty transcript to avoid Slack noise
 
+### Common troubleshooting
+
+- **No Slack messages**:
+  - Ensure `SLACK_WEBHOOK_URL` is set in the environment (Vercel env vars for production)
+  - Ensure the webhook payload has `status: "completed"`
+- **401 unauthorized**:
+  - Missing/wrong `?secret=...` in the webhook URL while `WEBHOOK_SECRET` is set
+  - Use a URL-safe secret (letters/numbers) to avoid encoding issues
+- **413 Payload Too Large**:
+  - Body exceeded `2mb` (`express.json({ limit: "2mb" })`)
+
 ### Expose localhost to Bolna (ngrok)
 
 In a separate terminal:
@@ -91,20 +154,6 @@ Copy the `https://...ngrok.io` URL and set your Bolna agent webhook URL to:
 - `https://<your-ngrok-domain>/webhook?secret=YOUR_SECRET`
 
 Bolna sends multiple execution updates per call; this integration only alerts on `completed`.
-
-### Deploy to Vercel
-
-This repo is set up to deploy the Express app as a Vercel Node function.
-
-1) Connect the GitHub repo to Vercel
-2) In Vercel Project → Settings → Environment Variables, set:
-   - `SLACK_WEBHOOK_URL`
-   - `WEBHOOK_SECRET`
-3) Deploy
-
-After deploy, configure Bolna webhook URL as:
-
-- `https://<your-vercel-domain>/webhook?secret=YOUR_SECRET`
 
 ### Project structure
 
