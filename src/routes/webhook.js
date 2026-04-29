@@ -13,6 +13,18 @@ function isValidSecret(provided, expected) {
   return crypto.timingSafeEqual(providedBuf, expectedBuf);
 }
 
+function isLikelyUuid(value) {
+  if (typeof value !== "string") return false;
+  // Accept UUID v1-v5 (common format). Good enough to filter obvious test values like "test".
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  );
+}
+
+function hasMeaningfulTranscript(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
 router.post("/", async (req, res) => {
   const expectedSecret = process.env.WEBHOOK_SECRET;
   if (expectedSecret) {
@@ -31,6 +43,17 @@ router.post("/", async (req, res) => {
 
   // Bolna sends multiple status transitions; only act on completed.
   if (payload.status !== "completed") {
+    return res.status(200).json({ received: true, processed: false });
+  }
+
+  // Filter out obvious test/invalid payloads to avoid noisy Slack alerts.
+  if (!isLikelyUuid(payload.id)) {
+    return res.status(200).json({ received: true, processed: false });
+  }
+
+  // Some completed executions may not include a transcript (or it may arrive later).
+  // For this assignment, skip Slack in that case to avoid "No transcript available" spam.
+  if (!hasMeaningfulTranscript(payload.transcript)) {
     return res.status(200).json({ received: true, processed: false });
   }
 
